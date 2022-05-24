@@ -55,7 +55,7 @@ def transform_rcs_to_mv(data_rcs, amp_gain):
     
     rcs_constant = 48644.8683623726 # RCS specific conversion constant
     amp_gain = 250*(amp_gain/255);  # Convert actual channel amp gain
-    data_rcs = data_mv * (1000*1.2) / (amp_gain*rcs_constant)
+    data_mv = data_rcs * (1000*1.2) / (amp_gain*rcs_constant)
     
     return data_mv
 
@@ -154,8 +154,9 @@ def rcs_td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
         data samples.
     fs_td : int, [250, 500, 1000]
         The Time-Domain sampling rate, in Hz.
-    L : int, {64, 256, 1024}
-        FFT size, in number of samples.
+    L : int, [64, 256, 1024]
+        FFT size, in number of samples. Throws a warning if given as a value 
+        that is not an option for the RC+S.
     interval : int 
         The interval, in ms, that the FFT window is shifted for producing each 
         subsequent output sample.
@@ -197,6 +198,8 @@ def rcs_td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
         L_non_zero = 250
     elif L == 1024:
         L_non_zero = 1000
+    else:
+        L_non_zero = L
 
     # Linearly interpolate over NaN-values
     nan_mask = np.isnan(data_td)
@@ -438,8 +441,8 @@ def rcs_pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold,
         # Update the recent history of "immediate" ld states
         ld_state_history[k] = np.roll(ld_state_history[k], 1)
         if dual_threshold[k]:
-            ld_state_history[k][0] = (cur_ld_output>threshold[k][0]) \
-                                   + (cur_ld_output>threshold[k][1])
+            ld_state_history[k][0] = (cur_ld_output>threshold[k][0]).astype(int) \
+                                   + (cur_ld_output>threshold[k][1]).astype(int)
         else:
             ld_state_history[k][0] = (cur_ld_output>threshold[k]).astype(int)
             
