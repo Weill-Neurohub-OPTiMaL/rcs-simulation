@@ -441,10 +441,10 @@ def rcs_pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold,
         # Update the recent history of "immediate" ld states
         ld_state_history[k] = np.roll(ld_state_history[k], 1)
         if dual_threshold[k]:
-            ld_state_history[k][0] = (cur_ld_output>threshold[k][0]).astype(int) \
-                                   + (cur_ld_output>threshold[k][1]).astype(int)
+            ld_state_history[k][0] = int(cur_ld_output>threshold[k][0]) \
+                                     + int(cur_ld_output>threshold[k][1])
         else:
-            ld_state_history[k][0] = (cur_ld_output>threshold[k]).astype(int)
+            ld_state_history[k][0] = int(cur_ld_output>threshold[k])
             
         # Update the single LD
         current_ld_state[k], blank_counter[k] = \
