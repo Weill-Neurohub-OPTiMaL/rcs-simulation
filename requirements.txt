@@ -10,3 +10,4 @@ scipy
 matplotlib
 time
 tkinter
+rcssim @ git+https://github.com/Weill-Neurohub-OPTiMaL/rcs-simulation.git@tutorial
