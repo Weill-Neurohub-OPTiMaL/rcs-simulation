@@ -1,0 +1,12 @@
+## Core function dependencies
+
+numpy
+pandas
+scipy
+
+
+## Tutorial dependencies
+
+matplotlib
+time
+tkinter
