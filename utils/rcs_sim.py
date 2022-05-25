@@ -209,7 +209,7 @@ def rcs_td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
 
     # Pre-select all FFT window edges
     mean_window_shift = interval*fs_td/1000
-    window_stops = np.uint(np.arange(L_non_zero, len(td_data), 
+    window_stops = np.uint(np.arange(L_non_zero, len(data_td), 
                                      mean_window_shift))
     window_starts = window_stops - L_non_zero
     num_windows = len(window_stops)
