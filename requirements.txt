@@ -8,6 +8,5 @@ scipy
 ## Tutorial dependencies
 
 matplotlib
-time
-tkinter
+tk
 rcssim @ git+https://github.com/Weill-Neurohub-OPTiMaL/rcs-simulation.git@tutorial
