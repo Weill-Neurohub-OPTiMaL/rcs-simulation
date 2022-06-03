@@ -139,8 +139,8 @@ def create_hann_window(L, percent=100):
     return hann_win
     
     
-def rcs_td_to_fft(data_td, time_td, fs_td, L, interval, hann_win, 
-                  output_in_mv=False):
+def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win, 
+              output_in_mv=False):
     """Computes short-time FFT of Time-Domain data as it is performed onboard 
     the RC+S device. The result may optionally be converted to match the logged 
     FFT outputs in units of mV.
@@ -233,8 +233,8 @@ def rcs_td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
     return data_fft, time_fft
 
 
-def rcs_fft_to_pb(data_fft, fs_td, L, bit_shift, 
-                  band_edges_hz=[], input_is_mv=False):
+def fft_to_pb(data_fft, fs_td, L, bit_shift, band_edges_hz=[], 
+              input_is_mv=False):
     """Converts short-time FFT outputs to scaled Power Band signals (or full 
     spectrogram) with the same scaling operations performed onboard the RC+S 
     device.
@@ -303,11 +303,10 @@ def rcs_fft_to_pb(data_fft, fs_td, L, bit_shift,
     return data_pb
 
 
-def rcs_pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, 
-                 threshold, onset_duration, termination_duration, 
-                 blank_duration, blank_both=[False, False], 
-                 subtract_vec=[np.zeros(4), np.zeros(4)], 
-                 multiply_vec=[np.ones(4), np.ones(4)]):
+def pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, threshold,
+             onset_duration, termination_duration, blank_duration, 
+             blank_both=[False, False], subtract_vec=[np.zeros(4), np.zeros(4)],
+             multiply_vec=[np.ones(4), np.ones(4)]):
     """Computes LD outputs from PB signals and determines state transitions.
    
     A NEW VERSION OF THIS COULD INCLUDE THE FRACTIONAL FIXED POINT VALUE WHICH
@@ -515,7 +514,7 @@ def determine_single_ld_current_state(ld_state_history, prev_ld_state,
     return current_ld_state, blank_counter
 
 
-def rcs_ld_to_stim(ld_state, time_ld, target_amp, rise_time, fall_time):
+def ld_to_stim(ld_state, time_ld, target_amp, rise_time, fall_time):
     """Predicts stimulation amplitude time series from LD states, target
     amplitudes, and rise/fall times.
 
