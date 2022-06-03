@@ -1,0 +1,12 @@
+## Core function dependencies
+
+numpy
+pandas
+scipy
+
+
+## Tutorial dependencies
+
+matplotlib
+tk
+rcssim @ git+https://github.com/Weill-Neurohub-OPTiMaL/rcs-simulation.git@tutorial
