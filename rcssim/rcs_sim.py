@@ -303,10 +303,91 @@ def fft_to_pb(data_fft, fs_td, L, bit_shift, band_edges_hz=[],
     return data_pb
 
 
-def pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, threshold,
-             onset_duration, termination_duration, blank_duration, 
-             blank_both=[False, False], subtract_vec=[np.zeros(4), np.zeros(4)],
+def pb_to_ld(data_pb, time_pb, update_rate, weights,
+             subtract_vec=[np.zeros(4), np.zeros(4)],
              multiply_vec=[np.ones(4), np.ones(4)]):
+    """Computes LD outputs from PB signals and determines state transitions.
+
+    Parameters
+    ----------
+    data_pb : (num_pb_samples, num_bands) array
+        Power Band data given in internal RC+S units.
+    time_pb : (num_pb_samples, ) array
+        Timestamps associated with each power band sample.
+    update_rate : (2,) list of positive integers
+        The number of PB samples to average over before producing an LD update.
+    weights : (2,) list of (num_bands,) arrays
+        LD weights. For this and all other parameters, the input may be given as
+        a (2,) list to indicate the use of two LD's and their unique parameters.
+    subtract_vec : optional (2,) list of (num_bands,) arrays
+        default=[np.zeros(4), np.zeros(4)]
+        Values directly subtracted from the PB signals prior to LD calculation.
+    multiply_vec : optional (2,) list of (num_bands,) arrays
+        default=[np.ones(4). np.ones(4)]
+        Scaling factors applied to the PB signals after subtraction but before
+        to LD calculation.
+
+    Returns
+    -------
+    ld_output : (2,) list of (num_ld_updates,) arrays
+        Continuous-valued LD outputs.
+    time_ld : (2,) list of (num_ld_updates,) arrays
+        Timestamps associated with each LD update sample.
+    update_tbl : (num_total_ld_updates, 3) array
+        A sorted lookup table for indexing outputs from each LD in order during 
+        stream processing. Updates from both LD's are represented in the same 
+        array. First column is the PB sample index (shared clock for both LD's),
+        second column is the LD sample index (unique to each LD), and third
+        column is the LD identifier (0/1).
+    """
+    
+    num_pb_samples, num_bands = np.shape(data_pb)
+    if np.size(weights[1]) == 0:
+        num_lds = 1
+    else:
+        num_lds = 2
+    
+    # Test for improper inputs and reformat inputs if necessary
+    for k in range(num_lds):
+        if update_rate[k]==0:
+            update_rate[k]=1
+    
+    # Compute LD outputs and prepare for stream processing
+    ld_output = [[],[]]
+    time_ld = [[],[]]
+    update_tbl = np.empty([0,3])
+    for k in range(num_lds):
+        # Normalize the PB signals
+        subtract_mat = np.tile(subtract_vec[k][:num_bands], (num_pb_samples,1))
+        multiply_mat = np.tile(multiply_vec[k][:num_bands], (num_pb_samples,1))
+        pb_norm = np.multiply(data_pb-subtract_mat, multiply_mat)
+        
+        # Compute LD outputs without blanking. Blanking will be done in stream.
+        clip_samples = int(num_pb_samples / update_rate[k]) * update_rate[k]
+        pb_norm = pb_norm[:clip_samples, :]
+        pb_reshaped = np.reshape(pb_norm, [-1, update_rate[k], num_bands])
+        pb_updated = np.mean(pb_reshaped, axis=1)
+        ld_output[k] = np.dot(pb_updated, np.reshape(weights[k], [-1,1]))
+        
+        # Assign timestamp array for the LD outputs
+        pb_idx = np.arange(update_rate[k]-1, clip_samples, update_rate[k])
+        time_ld[k] = time_pb[pb_idx]
+        
+        # Create a sorted lookup table for indexing outputs from each LD
+        ld_sample_idx = np.arange(np.shape(ld_output[k])[0])
+        ld_id = k*np.ones(np.shape(ld_output[k]))
+        single_ld_updates = np.concatenate((pb_idx[:,np.newaxis], 
+                                            ld_sample_idx[:,np.newaxis],
+                                            ld_id), axis=1)
+        update_tbl = np.append(update_tbl, single_ld_updates, axis=0)
+    update_tbl = update_tbl[update_tbl[:,0].argsort(),:].astype(int)
+   
+    return ld_output, time_ld, update_tbl
+
+
+def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold, 
+                threshold, onset_duration, termination_duration, blank_duration, 
+                blank_both=[False, False]):
     """Computes LD outputs from PB signals and determines state transitions.
    
     A NEW VERSION OF THIS COULD INCLUDE THE FRACTIONAL FIXED POINT VALUE WHICH
@@ -315,8 +396,14 @@ def pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, threshold,
 
     Parameters
     ----------
-    data_pb : (num_pb_samples, num_bands) array
-        Power Band data given in internal RC+S units.
+    ld_output : (2,) list of (num_ld_updates,) arrays
+        Continuous-valued LD outputs.
+    update_tbl : (num_total_ld_updates, 3) array
+        A sorted lookup table for indexing outputs from each LD in order during 
+        stream processing. Updates from both LD's are represented in the same 
+        array. First column is the PB sample index (shared clock for both LD's),
+        second column is the LD sample index (unique to each LD), and third
+        column is the LD identifier (0/1).
     time_pb : (num_pb_samples, ) array
         Timestamps associated with each power band sample.
     update_rate : (2,) list of positive integers
@@ -343,83 +430,39 @@ def pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, threshold,
         Indicates whether both LD's will be blanked when a single LD triggers
         state change blanking. The duration of the blanking will be determined
         by the state_blank corresponding to the LD that triggered blanking.
-    subtract_vec : optional (2,) list of (num_bands,) arrays
-        default=[np.zeros(4), np.zeros(4)]
-        Values directly subtracted from the PB signals prior to LD calculation.
-    multiply_vec : optional (2,) list of (num_bands,) arrays
-        default=[np.ones(4). np.ones(4)]
-        Scaling factors applied to the PB signals after subtraction but before
-        to LD calculation.
 
     Returns
     -------
-    ld_output : (num_pb_samples/update_rate,) array; or (2,) list of arrays
-        Continuous-valued LD outputs.
-    ld_state : (num_pb_samples/update_rate,) array
+    state : (num_pb_samples/update_rate,) array
         Discrete LD state at each timepoint. States can be 0:8.
-    ld_time : (num_ld_updates,) array
+    time_state : (num_ld_updates,) array
         Timestamps associated with each LD update sample.
+    ld_output : (2,) list of (num_ld_updates,) arrays
+        Continuous-valued LD outputs, updated to be "frozen" during blanking.
     """
     
-    num_pb_samples, num_bands = np.shape(data_pb)
-    if not weights[1]:
+    if np.size(ld_output[1]) == 0:
         num_lds = 1
     else:
         num_lds = 2
     
     # Test for improper inputs and reformat inputs if necessary
     for k in range(num_lds):
-        if update_rate[k]==0:
-            update_rate[k]=1
         if onset_duration[k]==0:
             onset_duration[k]=1
         if termination_duration[k]==0:
             termination_duration[k]=1
         if blank_duration[k]==0:
             blank_duration[k]=1
-    
-    # Compute LD outputs and prepare for stream processing
-    ld_output = [[],[]]
-    time_ld_output = [[],[]]
-    updates = np.empty([0,3])
-    for k in range(num_lds):
-        # Normalize the PB signals
-        subtract_mat = np.tile(subtract_vec[k][:num_bands], (num_pb_samples,1))
-        multiply_mat = np.tile(multiply_vec[k][:num_bands], (num_pb_samples,1))
-        pb_norm = np.multiply(data_pb-subtract_mat, multiply_mat)
-        
-        # Compute LD outputs without blanking. Blanking will be done in stream.
-        clipped_samples = int(num_pb_samples / update_rate[k]) * update_rate[k]
-        pb_norm = pb_norm[:clipped_samples, :]
-        pb_updated = np.reshape(pb_norm.T, [num_bands,-1,update_rate[k]])
-        pb_updated = np.mean(pb_updated, axis=2).T
-        ld_output[k] = np.dot(pb_updated, np.reshape(weights[k], [-1,1]))
-        
-        # Assign timestamp array for the LD outputs
-        pb_idx = np.arange(update_rate[k]-1, clipped_samples, update_rate[k])
-        time_ld_output[k] = time_pb[pb_idx]
-        
-        # Create a sorted lookup table for indexing outputs from each LD in
-        # order during stream processing.
-        # Col 1: PB sample index (shared sample clock for both LD's)
-        # Col 2: LD sample index (for indexing a specific LD's `ld_output`)
-        # Col 3: LD identifier (0 or 1)
-        ld_sample_idx = np.arange(np.shape(ld_output[k])[0])
-        ld_id = k*np.ones(np.shape(ld_output[k]))
-        single_ld_updates = np.concatenate((pb_idx[:,np.newaxis], 
-                                            ld_sample_idx[:,np.newaxis],
-                                            ld_id), axis=1)
-        updates = np.append(updates, single_ld_updates, axis=0)
-    updates = updates[updates[:,0].argsort(),:].astype(int)
         
     # Update LD states using stream processing
-    ld_state_history = [np.zeros(np.max([onset_duration[k],
-                                       termination_duration[k]]))
-                      for k in range(num_lds)]
+    state_history = [np.zeros(np.max([onset_duration[k],
+                                      termination_duration[k]]))
+                     for k in range(num_lds)]
     blank_counter = [0,0]
-    ld_state = np.empty([0]).astype(int)
-    current_ld_state = [0,0]
-    for idx, update in enumerate(updates):
+    state = np.empty([0]).astype(int)
+    current_state = [0,0]
+    for idx, update in enumerate(update_tbl):
         # Log info about current update
         ld_sample_idx = update[1]
         k = update[2]
@@ -428,7 +471,7 @@ def pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, threshold,
         # Check if the LD is blanked
         if (blank_counter[k]>0) or (blank_both[~k] and blank_counter[~k]>0):
             ld_output[k][ld_sample_idx] = ld_output[k][ld_sample_idx-1]
-            ld_state = np.append(ld_state, ld_state[-1]) 
+            state = np.append(state, state[-1]) 
             if idx+1 < np.shape(updates)[0]:
                 d_interval = updates[idx+1,0] - updates[idx,0]
             else:
@@ -438,26 +481,25 @@ def pb_to_ld(data_pb, time_pb, update_rate, weights, dual_threshold, threshold,
             continue
                 
         # Update the recent history of "immediate" ld states
-        ld_state_history[k] = np.roll(ld_state_history[k], 1)
+        state_history[k] = np.roll(state_history[k], 1)
         if dual_threshold[k]:
-            ld_state_history[k][0] = int(cur_ld_output>threshold[k][0]) \
-                                     + int(cur_ld_output>threshold[k][1])
+            state_history[k][0] = int(cur_ld_output>threshold[k][0]) \
+                                  + int(cur_ld_output>threshold[k][1])
         else:
-            ld_state_history[k][0] = int(cur_ld_output>threshold[k])
+            state_history[k][0] = int(cur_ld_output>threshold[k])
             
-        # Update the single LD
-        current_ld_state[k], blank_counter[k] = \
-                                determine_single_ld_current_state(
-                                     ld_state_history[k], current_ld_state[k], 
+        # Update the single LD state
+        current_state[k], blank_counter[k] = \
+                                determine_single_current_state(
+                                     state_history[k], current_state[k], 
                                      onset_duration[k], termination_duration[k], 
                                      blank_duration[k], blank_counter[k])  
         
-        # Update the combined LD
-        ld_state = np.append(ld_state, 
-                             current_ld_state[0]+3*current_ld_state[1])
-    time_ld = time_pb[updates[:,0]]
+        # Update the combined LD state
+        state = np.append(state, current_state[0]+3*current_state[1])
+    time_state = time_pb[update_tbl[:,0]]
    
-    return ld_output, ld_state, time_ld
+    return state, time_state, ld_output
 
 
 def determine_single_ld_current_state(ld_state_history, prev_ld_state, 
