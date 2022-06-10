@@ -307,6 +307,10 @@ def pb_to_ld(data_pb, time_pb, update_rate, weights,
              subtract_vec=[np.zeros(4), np.zeros(4)],
              multiply_vec=[np.ones(4), np.ones(4)]):
     """Computes LD outputs from PB signals and determines state transitions.
+    
+    A NEW VERSION OF THIS COULD INCLUDE THE FRACTIONAL FIXED POINT VALUE WHICH
+    DETERMINES THE FIXED POINT PRECISION. NOT LIKELY TO BE SUPER IMPORTANT IN
+    TERMS OF ALGORITHMIC PERFORMANCE, BUT DOES SCALE THE LOGGED OUTPUTS.
 
     Parameters
     ----------
@@ -388,11 +392,7 @@ def pb_to_ld(data_pb, time_pb, update_rate, weights,
 def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold, 
                 threshold, onset_duration, termination_duration, blank_duration, 
                 blank_both=[False, False]):
-    """Computes LD outputs from PB signals and determines state transitions.
-   
-    A NEW VERSION OF THIS COULD INCLUDE THE FRACTIONAL FIXED POINT VALUE WHICH
-    DETERMINES THE FIXED POINT PRECISION. NOT LIKELY TO BE SUPER IMPORTANT IN
-    TERMS OF ALGORITHMIC PERFORMANCE, BUT DOES SCALE THE LOGGED OUTPUTS.
+    """Determines LD state transitions from the LD outputs.
 
     Parameters
     ----------
@@ -502,18 +502,17 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
     return state, time_state, ld_output
 
 
-def determine_single_ld_current_state(ld_state_history, prev_ld_state, 
+def determine_single_ld_current_state(state_history, prev_state, 
                                       onset_duration, termination_duration, 
                                       blank_duration, blank_counter):
-    """Applies the onset/termination duration and state change blanking to
-    determine the current LD state.
+    """Applies the onset/termination duration to determine the current LD state.
 
     Parameters
     ----------
-    ld_state_history : (num_ld_samples,) array
+    state_history : (num_ld_samples,) array
         The recent history of "immediate" LD states, indicating which side of
         the thresholds the LD output was on at each instant.
-    prev_ld_state : positive integer, 0:8
+    prev_state : positive integer, 0:8
         The previous confirmed (as opposed to immediate) state of the LD.
     onset_duration : positive integer
         The number of LD updates (or outputs) that must be above the threshold
@@ -530,41 +529,41 @@ def determine_single_ld_current_state(ld_state_history, prev_ld_state,
 
     Returns
     -------
-    prev_ld_state : positive integer, 0:8
+    prev_state : positive integer, 0:8
         The current confirmed (as opposed to immediate) state of the LD.
     blank_counter : integer
         The number of remaining PB samples that the LD state change will be 
         blanked.
     """
     
-    if np.all(ld_state_history[:onset_duration]==2): # {0,1} -> 2
-        current_ld_state = 2
-    elif np.all(ld_state_history[:termination_duration]==0): # {1,2} -> 0
-        current_ld_state = 0
-    elif (prev_ld_state==2) \
-         & np.all(ld_state_history[:termination_duration]<2): # 2 -> 1
-        current_ld_state = 1
-    elif (prev_ld_state==0) \
-         & np.all(ld_state_history[:onset_duration]>0): # 0 -> 1
-        current_ld_state = 1
+    if np.all(state_history[:onset_duration]==2): # {0,1} -> 2
+        current_state = 2
+    elif np.all(state_history[:termination_duration]==0): # {1,2} -> 0
+        current_state = 0
+    elif (prev_state==2) \
+         & np.all(state_history[:termination_duration]<2): # 2 -> 1
+        current_state = 1
+    elif (prev_state==0) \
+         & np.all(state_history[:onset_duration]>0): # 0 -> 1
+        current_state = 1
     else:
-        current_ld_state = prev_ld_state
+        current_state = prev_state
         
-    if current_ld_state != prev_ld_state:
+    if current_state != prev_state:
         blank_counter = blank_duration-1
         
-    return current_ld_state, blank_counter
+    return current_state, blank_counter
 
 
-def ld_to_stim(ld_state, time_ld, target_amp, rise_time, fall_time):
+def ld_to_stim(state, time_state, target_amp, rise_time, fall_time):
     """Predicts stimulation amplitude time series from LD states, target
     amplitudes, and rise/fall times.
 
     Parameters
     ----------
-    ld_state : (num_ld_updates,) array
+    state : (num_ld_updates,) array
         Discrete LD state at each timepoint. States can be 0:8.
-    time_ld : (num_ld_updates,) array
+    time_state : (num_ld_updates,) array
         Timestamps associated with each LD update sample.
     target_amp : (8,) array
         The target stimulation amplitude for each state.
@@ -575,20 +574,20 @@ def ld_to_stim(ld_state, time_ld, target_amp, rise_time, fall_time):
 
     Returns
     -------
-    stim : positive integer, 0:8
-        The current confirmed (as opposed to immediate) state of the LD.
-    time_stim : integer
-        The number of remaining PB samples that the LD state change will be 
-        blanked.
+    stim : (num_stim_updates,) array
+        The stimulation amplitude, in mA. Only logged at change points 
+        (piecewise linear function)
+    time_stim : (num_stim_updates,) array
+        The timestamp for each stim sample.
     """
     
-    state_change_idx = np.squeeze(np.argwhere(np.diff(ld_state)!=0) + 1)
-    stim = np.array([0, target_amp[ld_state[0]]])
-    time_stim = np.array([time_ld[0], time_ld[0] + stim[-1] / rise_time])
+    state_change_idx = np.squeeze(np.argwhere(np.diff(state)!=0) + 1)
+    stim = np.array([0, target_amp[state[0]]])
+    time_stim = np.array([time_state[0], time_state[0] + stim[-1] / rise_time])
     for idx in state_change_idx:
-        if time_stim[-1] > time_ld[idx]: # if state changes during a stim ramp
+        if time_stim[-1] > time_state[idx]: #if state changes during a stim ramp
             # replace the last forecasted sample with an interpolated one
-            time_stim[-1] = time_ld[idx]
+            time_stim[-1] = time_state[idx]
             if stim[-1] > stim[-2]:
                 stim[-1] = stim[-2] \
                            + (time_stim[-1] - time_stim[-2]) * rise_time
@@ -596,7 +595,7 @@ def ld_to_stim(ld_state, time_ld, target_amp, rise_time, fall_time):
                 stim[-1] = stim[-2] \
                            + (time_stim[-1] - time_stim[-2]) * fall_time
             # forecast the end of the ramp
-            stim = np.append(stim, target_amp[ld_state[idx]])
+            stim = np.append(stim, target_amp[state[idx]])
             if stim[-1] > stim[-2]:
                 ramp_duration = (stim[-1] - stim[-2]) / rise_time
             else:
@@ -604,17 +603,17 @@ def ld_to_stim(ld_state, time_ld, target_amp, rise_time, fall_time):
             time_stim = np.append(time_stim, time_stim[-1] + ramp_duration)
         else: # if state changes during steady-state stim
             # report the preceding stim amp
-            time_stim = np.append(time_stim, time_ld[idx])
+            time_stim = np.append(time_stim, time_state[idx])
             stim = np.append(stim, stim[-1])
             # forecast the end of the ramp
-            stim = np.append(stim, target_amp[ld_state[idx]])
+            stim = np.append(stim, target_amp[state[idx]])
             if stim[-1] > stim[-2]:
                 ramp_duration = (stim[-1] - stim[-2]) / rise_time
             else:
                 ramp_duration = (stim[-2] - stim[-1]) / fall_time
             time_stim = np.append(time_stim, time_stim[-1] + ramp_duration)
-    if time_stim[-1] < time_ld[-1]: # add a final endpoint
-        time_stim = np.append(time_stim, time_ld[-1])
+    if time_stim[-1] < time_state[-1]: # add a final endpoint
+        time_stim = np.append(time_stim, time_state[-1])
         stim = np.append(stim, stim[-1])
     
     return stim, time_stim
