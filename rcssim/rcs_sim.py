@@ -472,8 +472,8 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
         if (blank_counter[k]>0) or (blank_both[~k] and blank_counter[~k]>0):
             ld_output[k][ld_sample_idx] = ld_output[k][ld_sample_idx-1]
             state = np.append(state, state[-1]) 
-            if idx+1 < np.shape(updates)[0]:
-                d_interval = updates[idx+1,0] - updates[idx,0]
+            if idx+1 < np.shape(update_tbl)[0]:
+                d_interval = update_tbl[idx+1,0] - update_tbl[idx,0]
             else:
                 d_interval = 0
             blank_counter[0] -= d_interval
@@ -490,7 +490,7 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
             
         # Update the single LD state
         current_state[k], blank_counter[k] = \
-                                determine_single_current_state(
+                                determine_single_ld_current_state(
                                      state_history[k], current_state[k], 
                                      onset_duration[k], termination_duration[k], 
                                      blank_duration[k], blank_counter[k])  
