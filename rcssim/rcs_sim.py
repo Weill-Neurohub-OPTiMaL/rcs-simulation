@@ -555,7 +555,7 @@ def determine_single_ld_current_state(state_history, prev_state,
     return current_state, blank_counter
 
 
-def ld_to_stim(state, time_state, target_amp, rise_time, fall_time):
+def state_to_stim(state, time_state, target_amp, rise_time, fall_time):
     """Predicts stimulation amplitude time series from LD states, target
     amplitudes, and rise/fall times.
 
