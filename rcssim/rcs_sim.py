@@ -617,5 +617,3 @@ def state_to_stim(state, time_state, target_amp, rise_time, fall_time):
         stim = np.append(stim, stim[-1])
     
     return stim, time_stim
-
-
