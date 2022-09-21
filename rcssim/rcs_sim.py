@@ -498,6 +498,12 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
         # Update the combined LD state
         state = np.append(state, current_state[0]+3*current_state[1])
     time_state = time_pb[update_tbl[:,0]]
+    
+    # Correct for situation where both LD's updated on the same sample,
+    # resulting in two state changes at the same moment in time. Return only
+    # the combined LD state AFTER both of the LD's had updated.
+    time_state, idx = np.unique(np.flip(time_state), return_index=True)
+    state = np.flip(state)[idx]
    
     return state, time_state, ld_output
 
