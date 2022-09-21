@@ -588,12 +588,12 @@ def state_to_stim(state, time_state, target_amp, rise_time, fall_time):
         if time_stim[-1] > time_state[idx]: #if state changes during a stim ramp
             # replace the last forecasted sample with an interpolated one
             time_stim[-1] = time_state[idx]
-            if stim[-1] > stim[-2]:
+            if stim[-1] > stim[-2]: # was ramping up
                 stim[-1] = stim[-2] \
                            + (time_stim[-1] - time_stim[-2]) * rise_time
-            else:
+            else: # was ramping down
                 stim[-1] = stim[-2] \
-                           + (time_stim[-1] - time_stim[-2]) * fall_time
+                           - (time_stim[-1] - time_stim[-2]) * fall_time
             # forecast the end of the ramp
             stim = np.append(stim, target_amp[state[idx]])
             if stim[-1] > stim[-2]:
