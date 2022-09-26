@@ -469,7 +469,7 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
         cur_ld_output = ld_output[k][ld_sample_idx]
         
         # Check if the LD is blanked
-        if (blank_counter[k]>0) or (blank_both[~k] and blank_counter[~k]>0):
+        if blank_counter[k]>0:
             ld_output[k][ld_sample_idx] = ld_output[k][ld_sample_idx-1]
             state = np.append(state, state[-1]) 
             if idx+1 < np.shape(update_tbl)[0]:
@@ -489,11 +489,14 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
             state_history[k][0] = int(cur_ld_output>threshold[k])
             
         # Update the single LD state
-        current_state[k], blank_counter[k] = \
+        current_state[k], blank_counter[k], fresh_blank = \
                                 determine_single_ld_current_state(
                                      state_history[k], current_state[k], 
                                      onset_duration[k], termination_duration[k], 
-                                     blank_duration[k], blank_counter[k])  
+                                     blank_duration[k], blank_counter[k]) 
+        if fresh_blank and blank_both[k]:
+            blank_counter[~k] = blank_duration[~k]-1
+        
         
         # Update the combined LD state
         state = np.append(state, current_state[0]+3*current_state[1])
@@ -540,6 +543,8 @@ def determine_single_ld_current_state(state_history, prev_state,
     blank_counter : integer
         The number of remaining PB samples that the LD state change will be 
         blanked.
+    fresh_blank : boolean
+        Shows whether the LD has just changed states and initiated blanking
     """
     
     if np.all(state_history[:onset_duration]==2): # {0,1} -> 2
@@ -554,11 +559,13 @@ def determine_single_ld_current_state(state_history, prev_state,
         current_state = 1
     else:
         current_state = prev_state
+        fresh_blank=False
         
     if current_state != prev_state:
         blank_counter = blank_duration-1
+        fresh_blank = True
         
-    return current_state, blank_counter
+    return current_state, blank_counter, fresh_blank
 
 
 def state_to_stim(state, time_state, target_amp, rise_time, fall_time):
