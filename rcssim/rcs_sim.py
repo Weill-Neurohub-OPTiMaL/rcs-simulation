@@ -468,38 +468,42 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
         k = update[2]
         cur_ld_output = ld_output[k][ld_sample_idx]
         
-        # Check if the LD is blanked
-        if blank_counter[k]>0:
+        # Repeat LD output and state if currently blanked
+        if blank_counter[k]>0: 
             ld_output[k][ld_sample_idx] = ld_output[k][ld_sample_idx-1]
             state = np.append(state, state[-1]) 
-            if idx+1 < np.shape(update_tbl)[0]:
-                d_interval = update_tbl[idx+1,0] - update_tbl[idx,0]
+        
+        # Compute new state if not blanked
+        else:       
+            # Update the recent history of "immediate" ld states
+            state_history[k] = np.roll(state_history[k], 1)
+            if dual_threshold[k]:
+                state_history[k][0] = int(cur_ld_output>threshold[k][0]) \
+                                      + int(cur_ld_output>threshold[k][1])
             else:
-                d_interval = 0
-            blank_counter[0] -= d_interval
-            blank_counter[1] -= d_interval
-            continue
-                
-        # Update the recent history of "immediate" ld states
-        state_history[k] = np.roll(state_history[k], 1)
-        if dual_threshold[k]:
-            state_history[k][0] = int(cur_ld_output>threshold[k][0]) \
-                                  + int(cur_ld_output>threshold[k][1])
-        else:
-            state_history[k][0] = int(cur_ld_output>threshold[k])
-            
-        # Update the single LD state
-        current_state[k], blank_counter[k], fresh_blank = \
+                state_history[k][0] = int(cur_ld_output>threshold[k])
+
+            # Update the single LD state
+            current_state[k], blank_counter[k], fresh_blank = \
                                 determine_single_ld_current_state(
                                      state_history[k], current_state[k], 
                                      onset_duration[k], termination_duration[k], 
                                      blank_duration[k], blank_counter[k]) 
-        if fresh_blank and blank_both[k]:
-            blank_counter[~k] = blank_duration[~k]-1
+            if fresh_blank and blank_both[k]:
+                blank_counter[np.abs(1-k)] = blank_duration[np.abs(1-k)]-1
+
+            # Update the combined LD state
+            state = np.append(state, current_state[0]+3*current_state[1])
         
+        # Update the blanking counter
+        if idx+1 < np.shape(update_tbl)[0]:
+            d_interval = update_tbl[idx+1,0] - update_tbl[idx,0]
+        else:
+            d_interval = 0
+        blank_counter[0] -= d_interval
+        blank_counter[1] -= d_interval
         
-        # Update the combined LD state
-        state = np.append(state, current_state[0]+3*current_state[1])
+    # Create the timestamp vector
     time_state = time_pb[update_tbl[:,0]]
     
     # Correct for situation where both LD's updated on the same sample,
@@ -547,6 +551,7 @@ def determine_single_ld_current_state(state_history, prev_state,
         Shows whether the LD has just changed states and initiated blanking
     """
     
+    fresh_blank = False
     if np.all(state_history[:onset_duration]==2): # {0,1} -> 2
         current_state = 2
     elif np.all(state_history[:termination_duration]==0): # {1,2} -> 0
@@ -559,7 +564,6 @@ def determine_single_ld_current_state(state_history, prev_state,
         current_state = 1
     else:
         current_state = prev_state
-        fresh_blank=False
         
     if current_state != prev_state:
         blank_counter = blank_duration-1
