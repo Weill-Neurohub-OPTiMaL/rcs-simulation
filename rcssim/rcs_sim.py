@@ -472,6 +472,7 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
         if blank_counter[k]>0: 
             ld_output[k][ld_sample_idx] = ld_output[k][ld_sample_idx-1]
             state = np.append(state, state[-1]) 
+            fresh_blank = False
         
         # Compute new state if not blanked
         else:       
@@ -489,19 +490,22 @@ def ld_to_state(ld_output, update_tbl, time_pb, update_rate, dual_threshold,
                                      state_history[k], current_state[k], 
                                      onset_duration[k], termination_duration[k], 
                                      blank_duration[k], blank_counter[k]) 
-            if fresh_blank and blank_both[k]:
-                blank_counter[np.abs(1-k)] = blank_duration[np.abs(1-k)]-1
+            if fresh_blank and blank_both[k] and num_lds==2:
+                blank_counter[np.abs(1-k)] = blank_duration[np.abs(1-k)]
 
             # Update the combined LD state
             state = np.append(state, current_state[0]+3*current_state[1])
         
         # Update the blanking counter
-        if idx+1 < np.shape(update_tbl)[0]:
-            d_interval = update_tbl[idx+1,0] - update_tbl[idx,0]
-        else:
+        if idx+1 >= np.shape(update_tbl)[0]:
             d_interval = 0
+        elif fresh_blank:
+            d_interval = 1
+        else:
+            d_interval = update_tbl[idx+1,0] - update_tbl[idx,0]
         blank_counter[0] -= d_interval
-        blank_counter[1] -= d_interval
+        if num_lds==2:
+            blank_counter[1] -= d_interval
         
     # Create the timestamp vector
     time_state = time_pb[update_tbl[:,0]]
@@ -566,7 +570,7 @@ def determine_single_ld_current_state(state_history, prev_state,
         current_state = prev_state
         
     if current_state != prev_state:
-        blank_counter = blank_duration-1
+        blank_counter = blank_duration
         fresh_blank = True
         
     return current_state, blank_counter, fresh_blank
