@@ -587,7 +587,9 @@ def state_to_stim(state, time_state, target_amp, rise_time, fall_time):
     time_state : (num_ld_updates,) array
         Timestamps associated with each LD update sample.
     target_amp : (8,) array
-        The target stimulation amplitude for each state.
+        The target stimulation amplitude for each state. A value of 25.5 will
+        cause the stimulation amplitude to remain at the same value it was upon
+        state change.
     rise_time : positive integer
         Increasing stim ramp rate, given in units of mA/sec.
     fall_time : positive integer
@@ -616,23 +618,25 @@ def state_to_stim(state, time_state, target_amp, rise_time, fall_time):
                 stim[-1] = stim[-2] \
                            - (time_stim[-1] - time_stim[-2]) * fall_time
             # forecast the end of the ramp
-            stim = np.append(stim, target_amp[state[idx]])
-            if stim[-1] > stim[-2]:
-                ramp_duration = (stim[-1] - stim[-2]) / rise_time
-            else:
-                ramp_duration = (stim[-2] - stim[-1]) / fall_time
-            time_stim = np.append(time_stim, time_stim[-1] + ramp_duration)
+            if target_amp[state[idx]] < 25.5: # if not holding, then begin ramp
+                stim = np.append(stim, target_amp[state[idx]])
+                if stim[-1] > stim[-2]:
+                    ramp_duration = (stim[-1] - stim[-2]) / rise_time
+                else:
+                    ramp_duration = (stim[-2] - stim[-1]) / fall_time
+                time_stim = np.append(time_stim, time_stim[-1] + ramp_duration)
         else: # if state changes during steady-state stim
             # report the preceding stim amp
             time_stim = np.append(time_stim, time_state[idx])
             stim = np.append(stim, stim[-1])
             # forecast the end of the ramp
-            stim = np.append(stim, target_amp[state[idx]])
-            if stim[-1] > stim[-2]:
-                ramp_duration = (stim[-1] - stim[-2]) / rise_time
-            else:
-                ramp_duration = (stim[-2] - stim[-1]) / fall_time
-            time_stim = np.append(time_stim, time_stim[-1] + ramp_duration)
+            if target_amp[state[idx]] < 25.5: # if not holding, then begin ramp
+                stim = np.append(stim, target_amp[state[idx]])
+                if stim[-1] > stim[-2]:
+                    ramp_duration = (stim[-1] - stim[-2]) / rise_time
+                else:
+                    ramp_duration = (stim[-2] - stim[-1]) / fall_time
+                time_stim = np.append(time_stim, time_stim[-1] + ramp_duration)
     if time_stim[-1] < time_state[-1]: # add a final endpoint
         time_stim = np.append(time_stim, time_state[-1])
         stim = np.append(stim, stim[-1])
