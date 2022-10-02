@@ -5,8 +5,9 @@ pandas
 scipy
 
 
-## Tutorial dependencies
+## Tutorial and testing notebook dependencies
 
+scikit-learn
 matplotlib
 tk
-rcssim @ git+https://github.com/Weill-Neurohub-OPTiMaL/rcs-simulation.git@tutorial
+rcssim @ git+https://github.com/Weill-Neurohub-OPTiMaL/rcs-simulation.git@main
