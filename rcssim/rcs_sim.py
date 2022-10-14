@@ -126,21 +126,36 @@ def create_hann_window(L, percent=100):
     
     if percent<=0 | percent>100:
         raise ValueError('`percent` must be in the interval (0,100]')
+        
+    # The actual FFT uses a smaller number of true time-domain samples and
+    # zero-pads the remainder
+    L = int(L)
+    if L == 64:
+        L_non_zero = 63 # on the device this alternates between 62 and 63
+    elif L == 256:
+        L_non_zero = 250
+    elif L == 1024:
+        L_non_zero = 1000
+    else:
+        L_non_zero = L
     
     # calculate the cosine curve
     B = (200/percent)*np.pi
-    hann_win = 0.5*(1-np.cos(B*np.arange(L)/(L-1)))
+    hann_win = 0.5*(1-np.cos(B*np.arange(L_non_zero)/(L_non_zero)))
     
     # replace the inner portion of the cosine curve with flat 1's
     if percent<100:
         peak_idx = signal.find_peaks(hann_win)[0]
         hann_win[peak_idx[0]+1:peak_idx[-1]] = 1
         
+    # zero-pad remaining points
+    hann_win = np.concatenate([hann_win, np.zeros(L-L_non_zero)])
+        
     return hann_win
     
     
 def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win, 
-              output_in_mv=False):
+              interp_drops=True, output_in_mv=False):
     """Computes short-time FFT of Time-Domain data as it is performed onboard 
     the RC+S device. The result may optionally be converted to match the logged 
     FFT outputs in units of mV.
@@ -163,6 +178,11 @@ def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
     hann_win : (L,) array, or transpose
         The coefficients of the Hann window applied to Time-Domain data prior to 
         computing the FFT.
+    interp_drops : boolean. default=True
+        Boolean flag indicating whether to linearly interpolate over missing
+        Time-Domain samples. This can cause unexpected power outputs,
+        particularly increases in the low frequencies, but can be advantageous 
+        for downstream LD operations as it will not miss and Power Band samples.
     output_in_mv : boolean. default=False
         Boolean flag indicating whether to match the FFT output units to what is 
         logged by the device (scaled mV).
@@ -193,7 +213,7 @@ def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
     # zero-pads the remainder
     L = int(L)
     if L == 64:
-        L_non_zero = 62 # on the device this alternates between 62 and 63
+        L_non_zero = 63 # on the device this alternates between 62 and 63
     elif L == 256:
         L_non_zero = 250
     elif L == 1024:
@@ -202,10 +222,11 @@ def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
         L_non_zero = L
 
     # Linearly interpolate over NaN-values
-    nan_mask = np.isnan(data_td)
-    idx = np.arange(len(data_td))
-    data_td[nan_mask] = np.interp(idx[nan_mask], \
-                                  idx[~nan_mask], data_td[~nan_mask])
+    if interp_drops:
+        nan_mask = np.isnan(data_td)
+        idx = np.arange(len(data_td))
+        data_td[nan_mask] = np.interp(idx[nan_mask], \
+                                      idx[~nan_mask], data_td[~nan_mask])
 
     # Pre-select all FFT window edges
     mean_window_shift = interval*fs_td/1000
@@ -221,8 +242,12 @@ def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
         td_window = np.zeros(L)
         td_window[:L_non_zero] = \
             data_td[window_starts[s]:window_stops[s]]
+        # Apply the hann window, remove any missing datapoints, and zero-pad
+        td_hann = td_window*hann_win
+        td_hann = td_hann[~np.isnan(td_hann)]
+        td_hann = np.concatenate([td_hann, np.zeros(L-np.shape(td_hann)[0])])
         # Take the FFT and calculate complex magnitudes
-        current_fft = np.fft.fft(td_window*hann_win, L)
+        current_fft = np.fft.fft(td_hann, L)
         current_fft = np.abs(current_fft)
         data_fft[s,:] = current_fft
 
