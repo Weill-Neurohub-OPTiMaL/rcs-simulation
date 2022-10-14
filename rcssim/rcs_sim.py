@@ -126,15 +126,30 @@ def create_hann_window(L, percent=100):
     
     if percent<=0 | percent>100:
         raise ValueError('`percent` must be in the interval (0,100]')
+        
+    # The actual FFT uses a smaller number of true time-domain samples and
+    # zero-pads the remainder
+    L = int(L)
+    if L == 64:
+        L_non_zero = 63 # on the device this alternates between 62 and 63
+    elif L == 256:
+        L_non_zero = 250
+    elif L == 1024:
+        L_non_zero = 1000
+    else:
+        L_non_zero = L
     
     # calculate the cosine curve
     B = (200/percent)*np.pi
-    hann_win = 0.5*(1-np.cos(B*np.arange(L)/(L-1)))
+    hann_win = 0.5*(1-np.cos(B*np.arange(L_non_zero)/(L_non_zero)))
     
     # replace the inner portion of the cosine curve with flat 1's
     if percent<100:
         peak_idx = signal.find_peaks(hann_win)[0]
         hann_win[peak_idx[0]+1:peak_idx[-1]] = 1
+        
+    # zero-pad remaining points
+    hann_win = np.concatenate([hann_win, np.zeros(L-L_non_zero)])
         
     return hann_win
     
@@ -193,7 +208,7 @@ def td_to_fft(data_td, time_td, fs_td, L, interval, hann_win,
     # zero-pads the remainder
     L = int(L)
     if L == 64:
-        L_non_zero = 62 # on the device this alternates between 62 and 63
+        L_non_zero = 63 # on the device this alternates between 62 and 63
     elif L == 256:
         L_non_zero = 250
     elif L == 1024:
